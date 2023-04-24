@@ -43,13 +43,15 @@ class MultiCopter(NLS):
         k4 = self.derivative(self.euler_update(state, k3, t), input)
 
         return state + (k1 + 2 * k2 + 2 * k3 + k4) / 6 * t
-    
+
     def observation(self, state, input, t=None):
         return state
-    
+
     def euler_update(self, state, derivative, dt):
-        position, pose, vel, angular_speed = state[0:3], state[3:7], state[7:10], state[10:13]
-        vel, angular_derivative, acceleration, w_dot = derivative[0:3], derivative[3:7], derivative[7:10], derivative[10:13]
+        position, pose, vel, angular_speed = state[0:3], state[3:7], \
+            state[7:10], state[10:13]
+        vel, angular_derivative, acceleration, w_dot = derivative[0:3], derivative[3:7], \
+            derivative[7:10], derivative[10:13]
 
         position_updated = position + vel * dt
         pose_updated = pose + angular_derivative * dt
@@ -67,14 +69,17 @@ class MultiCopter(NLS):
         )
 
     def derivative(self, state, input):
-        position, pose, vel, angular_speed = state[0:3], state[3:7], state[7:10], state[10:13]
-        thrust, M = input[0], input[1:4].reshape([3, 1])
+        position, pose, vel, angular_speed = state[0:3], state[3:7], \
+            state[7:10], state[10:13]
+        thrust, M = input[0], input[1:4]
 
         pose_in_R = self.quaternion_2_rotation_matrix(pose)
 
-        acceleration = (torch.mm(pose_in_R, -thrust * self.e3) + self.m * self.g * self.e3) / self.m
-        w_dot = torch.mm(self.J_inverse, M - torch.cross(angular_speed, torch.mm(self.J, angular_speed)))
-        
+        acceleration = (torch.mm(pose_in_R, -thrust * self.e3)
+                         + self.m * self.g * self.e3) / self.m
+        w_dot = torch.mm(self.J_inverse,
+                         M - torch.cross(angular_speed, torch.mm(self.J, angular_speed)))
+
         return torch.vstack([
                 vel,
                 angular_speed_2_quaternion_dot(pose, angular_speed),
@@ -87,5 +92,3 @@ class MultiCopter(NLS):
         q = q / torch.norm(q)
         qahat = hat(q[1:4])
         return (torch.eye(3) + 2 * torch.mm(qahat, qahat) + 2 * q[0] * qahat).double()
-  
-    

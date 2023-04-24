@@ -2,11 +2,12 @@ import torch
 from pypose.module.controller import Controller
 
 def hat(vector):
+    device = vector.device
     vector = vector.reshape([3, 1])
     return torch.stack([
-      torch.stack([torch.tensor([0.]), -vector[2], vector[1]], dim=0),
-      torch.stack([vector[2], torch.tensor([0.]), -vector[0]], dim=0),
-      torch.stack([-vector[1], vector[0], torch.tensor([0.])], dim=0)
+      torch.stack([torch.tensor([0.], device=device), -vector[2], vector[1]], dim=0),
+      torch.stack([vector[2], torch.tensor([0.], device=device), -vector[0]], dim=0),
+      torch.stack([-vector[1], vector[0], torch.tensor([0.], device=device)], dim=0)
     ]).reshape([3, 3])
 
 def vee(skew_symmetric_matrix):
@@ -17,9 +18,11 @@ def vee(skew_symmetric_matrix):
     ).reshape([3, 1])
 
 def quaternion_2_rotation_matrix(q):
+    device = q.device
     q = q / torch.norm(q)
     qahat = hat(q[1:4])
-    return (torch.eye(3) + 2 * torch.mm(qahat, qahat) + 2 * q[0] * qahat).double()
+    return (torch.eye(3, device=device)
+      + 2 * torch.mm(qahat, qahat) + 2 * q[0] * qahat).double()
 
 def angular_speed_2_quaternion_dot(quaternion, angular_speed):
     p, q, r = angular_speed
@@ -43,13 +46,13 @@ class SE3Controller(Controller):
     def get_control(self, parameters, state, ref_state, feed_forward_quantity):
         desired_position, desired_velocity, desired_acceleration, \
           desired_pose, desired_angular_vel, desired_angular_acc = ref_state
-    
+
         # extract specific state from state tensor
         position = state[0:3]
         pose = state[3:7]
         vel = state[7:10]
         angular_vel = state[10:13]
-        
+
         # extract parameters
         kp, kv, kori, kw = parameters
 
@@ -57,7 +60,7 @@ class SE3Controller(Controller):
 
         err_position = position - desired_position
         err_vel = vel - desired_velocity
-        
+
         # compute the desired thrust
         b3_des = - kp * err_position - kv * err_vel - self.m * self.g * self.e3 + self.m * desired_acceleration
         f = -torch.mm(b3_des.T, torch.mm(Rwb, self.e3))
@@ -73,5 +76,3 @@ class SE3Controller(Controller):
         return torch.stack(
           [torch.max(torch.tensor([0.]), f[0]), M[0], M[1], M[2]]
         ).reshape([4, 1])
-    
-    
