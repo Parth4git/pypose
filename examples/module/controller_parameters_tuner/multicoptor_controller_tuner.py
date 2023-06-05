@@ -60,8 +60,11 @@ def get_ref_states(waypoints, dt):
             torch.tensor([q_err[3]], device=device)]).double()
         if torch.norm(axis) != 0:
           axis = axis / torch.norm(axis)
-        angle = 2 * torch.acos(q_err[0])
-        angle_dot = angle / dt * axis
+        # angle = 2 * torch.acos(q_err[0])
+        # angle_dot = angle / dt * axis
+        # angle_ddot = ((angle_dot - last_ref_angle_dot) / dt).double()
+        angle = 0.0
+        angle_dot = 0.0 * axis
         angle_ddot = ((angle_dot - last_ref_angle_dot) / dt).double()
 
         ref_states.append((position_tensor, velocity_tensor,
@@ -116,7 +119,7 @@ if __name__ == "__main__":
 
     # program parameters
     time_interval = 0.02
-    learning_rate = 0.05
+    learning_rate = 0.1
     initial_state = torch.tensor([0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]).reshape([13, 1]).double()
     initial_controller_parameters = torch.tensor([[0.5003, 0.0996, 0.7173, 0.0100]]).reshape([4, 1]).double()
 
@@ -135,6 +138,7 @@ if __name__ == "__main__":
         torch.tensor([1.])]
       ).to(device=args.device)
     multicopter = MultiCopter(time_interval,
+                               0.6,
                                torch.tensor(g),
                                torch.tensor([
                                   [0.0829, 0., 0.],
@@ -156,6 +160,9 @@ if __name__ == "__main__":
     states_to_tune[1, 1] = 1
     states_to_tune[2, 2] = 1
 
+    print("Original Loss: ", compute_loss(multicopter, controller, controller_parameters,
+                                     initial_state, ref_states, time_interval))
+
     while tuning_times < max_tuning_iterations:
         controller_parameters = tuner.tune(
           multicopter,
@@ -170,6 +177,6 @@ if __name__ == "__main__":
           func_to_get_state_error
         )
         tuning_times += 1
-        print("Controller parameters: ", controller_parameters)
+        # print("Controller parameters: ", controller_parameters)
         print("Loss: ", compute_loss(multicopter, controller, controller_parameters,
                                      initial_state, ref_states, time_interval))
