@@ -61,8 +61,7 @@ class MultiCopter(NLS):
         vel_updated = vel + acceleration * dt
         angular_speed_updated = angular_speed + w_dot * dt
 
-        return torch.concat(
-            [
+        return torch.concat([
                 position_updated,
                 pose_updated,
                 vel_updated,
@@ -75,14 +74,20 @@ class MultiCopter(NLS):
             state[7:10], state[10:13]
         thrust, M = input[0], input[1:4]
 
-        pose_in_R = self.quaternion_2_rotation_matrix(pose)
+        # convert the 1d row vector to 2d column vector
+        M = torch.t(torch.atleast_2d(M))
+        pose = torch.t(torch.atleast_2d(pose))
+
+        pose_in_R = quaternion_2_rotation_matrix(pose)
 
         acceleration = (torch.mm(pose_in_R, -thrust * self.e3)
-                         + self.m * self.g * self.e3) / self.m
-        w_dot = torch.mm(self.J_inverse,
-                         M - torch.cross(angular_speed, torch.mm(self.J, angular_speed)))
+                        + self.m * self.g * self.e3) / self.m
 
-        return torch.vstack([
+        angular_speed = torch.t(torch.atleast_2d(angular_speed))
+        w_dot = torch.mm(self.J_inverse,
+                        M - torch.cross(angular_speed, torch.mm(self.J, angular_speed)))
+
+        return torch.concat([
                 vel,
                 angular_speed_2_quaternion_dot(pose, angular_speed),
                 acceleration,
