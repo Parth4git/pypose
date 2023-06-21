@@ -1,32 +1,19 @@
 import torch
 from pypose.module.dynamics import NLS
+from examples.module.controller_parameters_tuner.commons \
+    import quaternion_2_rotation_matrix
 
-
-def hat(vector):
-    vector = vector.reshape([3, 1])
-    return torch.stack([
-        torch.stack([torch.tensor([0.]), -vector[2], vector[1]], dim=0),
-        torch.stack([vector[2], torch.tensor([0.]), -vector[0]], dim=0),
-        torch.stack([-vector[1], vector[0], torch.tensor([0.])], dim=0)
-    ]).reshape([3, 3])
-
-def vee(skew_symmetric_matrix):
-    return torch.stack(
-        (-skew_symmetric_matrix[1, 2],
-        skew_symmetric_matrix[0, 2],
-        -skew_symmetric_matrix[0, 1])
-    ).reshape([3, 1])
-
-def angular_speed_2_quaternion_dot(quaternion, angular_speed):
-    p, q, r = angular_speed
-    zero_t = torch.tensor([0.])
-    return -0.5 * torch.mm(torch.stack(
+def angular_vel_2_quaternion_dot(quaternion, w):
+    device = quaternion.device
+    p, q, r = w
+    zero_t = torch.tensor([0.], device=device)
+    return -0.5 * torch.mm(torch.squeeze(torch.stack(
         [
-            torch.stack([zero_t, p, q, r]),
-            torch.stack([-p, zero_t, -r, q]),
-            torch.stack([-q, r, zero_t, -p]),
-            torch.stack([-r, -q, p, zero_t])
-        ]).reshape([4, 4]), quaternion)
+            torch.stack([zero_t, p, q, r], dim=-1),
+            torch.stack([-p, zero_t, -r, q], dim=-1),
+            torch.stack([-q, r, zero_t, -p], dim=-1),
+            torch.stack([-r, -q, p, zero_t], dim=-1)
+        ])), quaternion)
 
 class MultiCopter(NLS):
     def __init__(self, dt, mass, g, J, e3):
