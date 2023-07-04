@@ -1,6 +1,6 @@
 import torch
 import pypose as pp
-from pypose.module.controllers.dubincar_controller import DubinCarController
+from pypose.module.dubincar_controller import DubinCarController
 from examples.module.dynamics.dubincar import DubinCar
 from pypose.module.controller_parameters_tuner import ControllerParametersTuner
 
