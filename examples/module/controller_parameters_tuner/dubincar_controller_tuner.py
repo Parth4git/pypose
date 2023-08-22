@@ -16,7 +16,6 @@ def get_shortest_path_between_angles(original_ori, des_ori):
       e_ori = des_ori + 2 * torch.pi - original_ori
   return e_ori
 
-
 def get_ref_states(waypoints, dt, device):
     car_desired_states = []
     last_desired_state = torch.zeros(9, device=device)
@@ -134,14 +133,14 @@ if __name__ == "__main__":
     points = torch.tensor([[[0., 0., 0.],
                             [1., 0, 0],
                             [1., 1, 0],
-                            [1., 2, 0],
-                            [2., 3, 0],
-                            [4., 3, 0]]])
+                            [2., 0, 0],
+                            [3., 1, 0],
+                            [4., 0, 0]]])
 
-    waypoints = pp.CSplineR3(points, time_interval)[0]
+    waypoints = pp.chspline(points, time_interval)[0]
     ref_states = get_ref_states(waypoints, time_interval, args.device)
 
-    dubincar = DubinCar(time_interval)
+    dubincar = DubinCar()
 
     # start to tune the controller parameters
     penalty_coefficient = 0.0001
