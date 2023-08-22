@@ -4,7 +4,7 @@ from torch import nn
 
 class PID(nn.Module):
     r"""
-    This class is the basic class for all controller implementations.
+    This class is the basic class for all PID controller implementations.
     """
     def __init__(self):
         pass
