@@ -200,11 +200,9 @@ def plot_3d_trajectory(wps):
 np.set_printoptions(threshold=sys.maxsize)
 np.set_printoptions(suppress=True)
 np.set_printoptions(linewidth=np.inf)
-waypoints = [
-  WayPoint(0, 0, 1, 0),
-  WayPoint(1, 2, 0, 1),
-  WayPoint(9, 3, 0, 20),
-]
+waypoints = [WayPoint(0, 0, 0, 0),
+            WayPoint(0, 0, -1, 2),
+            WayPoint(0, 0, -2, 4)]
 traj_gen = PolynomialTrajectoryGenerator()
 traj_gen.assign_timestamps_in_waypoints(waypoints)
 desired_states = traj_gen.generate_trajectory(waypoints, 0.1, 7)

@@ -5,13 +5,14 @@ import matplotlib.pyplot as plt
 from pypose.module.geometric_controller import GeometricController
 from examples.module.dynamics.multicopter import MultiCopter
 from pypose.module.controller_parameters_tuner import ControllerParametersTuner
-from min_snap_trajectory import PolynomialTrajectoryGenerator, WayPoint
+from examples.module.controller_parameters_tuner.polynomial_trajectory \
+    import PolynomialTrajectoryGenerator, WayPoint
 
 def get_ref_states(initial_state, waypoints, dt):
     device = initial_state.device
 
     traj_gen = PolynomialTrajectoryGenerator()
-    desired_states = traj_gen.generate_trajectory(waypoints, 0.1, 7)
+    desired_states = traj_gen.generate_trajectory(waypoints, dt, 7)
 
     pose = torch.atleast_2d(initial_state[3:7])
 
@@ -50,17 +51,13 @@ def get_ref_states(initial_state, waypoints, dt):
         acc_tensor_in_column_vector = torch.unsqueeze(acc_tensor, dim=1)
 
         # assume the yaw angle stays at 0
-        b1_yaw_tensor = torch.stack([
-            torch.tensor([1.], device=device),
-            torch.tensor([0.], device=device),
-            torch.tensor([0.], device=device)]).double()
-
+        b1_yaw_tensor = torch.tensor([[1], [0], [0]], device=device).double()
         b3_ref = -acc_tensor_in_column_vector / torch.norm(acc_tensor_in_column_vector)
         b2_ref = torch.cross(b3_ref, b1_yaw_tensor)
         b2_ref = b2_ref / torch.norm(b2_ref)
         b1_ref = torch.cross(b2_ref, b3_ref)
         Rwb = (torch.concat([b1_ref, b2_ref, b3_ref], dim=1)).double()
-        R_err = torch.mm(Rwb.T, torch.t(last_ref_pose.T))
+        R_err = torch.mm(torch.t(last_ref_pose), Rwb)
         q_err = pp.from_matrix(R_err, ltype=pp.SO3_type)
         axis = torch.squeeze(torch.tensor([q_err[0], q_err[1], q_err[2]])).reshape([3])
         if torch.norm(axis) != 0:
@@ -69,18 +66,11 @@ def get_ref_states(initial_state, waypoints, dt):
         angle_dot = angle / dt * axis
         angle_ddot = ((angle_dot - last_ref_angle_dot) / dt).double()
 
-        # assign zero pose to all waypoints
-        # angle = 0.0
-        # angle_dot = torch.zeros([3,], device=device).double()
-        # angle_ddot = ((angle_dot - last_ref_angle_dot) / dt).double()
-
         ref_states.append((position_tensor, velocity_tensor,
                            raw_acc_tensor, Rwb, angle_dot, angle_ddot))
 
         last_ref_pose = Rwb
         last_ref_angle_dot = angle_dot
-        last_ref_angle_ddot = angle_ddot
-        last_velocity_tensor = velocity_tensor
 
     return ref_states
 
@@ -156,7 +146,6 @@ def subPlot(ax, x, y, y_ref, xlabel=None, ylabel=None):
     ax.legend()
     ax.set_xlabel(xlabel)
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Multicopter Controller Tuner Example')
     parser.add_argument("--device", type=str, default='cpu', help="cuda or cpu")
@@ -172,37 +161,24 @@ if __name__ == "__main__":
 
     # program parameters
     time_interval = 0.02
-    learning_rate = 0.01
+    learning_rate = 5
 
     initial_state = torch.zeros(13, device=args.device).double()
     initial_state[6] = 1
-    # initial_controller_parameters = torch.ones(4, device=args.device).double()
-    initial_controller_parameters = torch.tensor([6, 0.0100, 1.0000, 1.0000], device=args.device).double()
+    initial_controller_parameters = torch.ones(4, device=args.device).double()
 
-    points = torch.tensor([[[0., 0., 0.],
-                            [1., 1., 0]]], device=args.device)
-    waypoints = [
-        WayPoint(0, 0, 0, 0),
-        WayPoint(0, 0, -1, 1),
-        WayPoint(0, 0, -3, 2)
-    ]
-
-    waypoints = pp.chspline(points, time_interval)[0]
+    waypoints = [WayPoint(0, 0, 0, 0),
+                WayPoint(1, 0, -1, 1),
+                WayPoint(1, 1, -2, 2)]
 
     ref_states = get_ref_states(quadrotor_waypoints, time_interval)
 
 
-    e3 = torch.stack([
-        torch.tensor([0.]),
-        torch.tensor([0.]),
-        torch.tensor([1.])]
-      ).to(device=args.device).double()
-    inertia = torch.tensor([
-                            [0.0829, 0., 0.],
-                            [0, 0.0845, 0],
-                            [0, 0, 0.1377]
-                          ], device=args.device)
-    multicopter = MultiCopter(0.6, torch.tensor(g), inertia, e3)
+    e3 = torch.tensor([[0], [0], [1]], device=args.device).double()
+    inertia = torch.tensor([[0.0829, 0., 0.],
+                            [0., 0.0845, 0.],
+                            [0., 0., 0.1377]], device=args.device)
+    multicopter = MultiCopter(0.6, torch.tensor(g, device=args.device), inertia, e3)
 
     # start to tune the controller parameters
     penalty_coefficient = 0
@@ -224,6 +200,7 @@ if __name__ == "__main__":
     last_loss_after_tuning = compute_loss(multicopter, controller, controller_parameters,
                                           penalty_coefficient, initial_state, ref_states, time_interval)
     print("Original Loss: ", last_loss_after_tuning)
+
     meet_termination_condition = False
     while not meet_termination_condition:
         controller_parameters = tuner.tune(
@@ -232,8 +209,8 @@ if __name__ == "__main__":
           ref_states,
           controller,
           controller_parameters,
-          (0.01 * torch.ones_like(controller_parameters),
-            10 * torch.ones_like(controller_parameters)),
+          (0.001 * torch.ones_like(controller_parameters),
+            20 * torch.ones_like(controller_parameters)),
           time_interval,
           states_to_tune,
           func_to_get_state_error
@@ -255,6 +232,7 @@ if __name__ == "__main__":
                                 initial_state, ref_states, time_interval)
     new_system_states = run(multicopter, controller, controller_parameters, initial_state,
                             ref_states, time_interval)
+
     #insert intial reference state
     # get ref states
     initial_pose = torch.atleast_2d(torch.tensor([0, 0, 0, 1], device=args.device))
@@ -266,13 +244,16 @@ if __name__ == "__main__":
       (torch.zeros(3, device=args.device).double(),
       torch.zeros(3, device=args.device).double(),
       torch.zeros(3, device=args.device).double(),
-      last_ref_pose, last_ref_angle_dot, last_ref_angle_ddot)
-    )
+      last_ref_pose, last_ref_angle_dot, last_ref_angle_ddot))
 
-    time = torch.arange(0, len(waypoints) - 1 + time_interval, time_interval).numpy()
+    time = torch.arange(0,  len(ref_states)).numpy() * time_interval
     f, ax = plt.subplots(nrows=2, ncols=1, sharex=True)
-    ax[0].set_ylabel("Tracking error before tuning")
-    ax[1].set_ylabel("Tracking error after tuning")
+    ax[0].set_title("Tracking result before tuning")
+    ax[0].set_xlabel("time(s)")
+    ax[0].set_ylabel("Tracking error(m)")
+    ax[1].set_title("Tracking result after tuning")
+    ax[1].set_xlabel("time(s)")
+    ax[1].set_ylabel("Tracking error(m)")
     subPlot(ax[0], time, get_sub_states(original_system_states, 0),  get_sub_ref_states(ref_states, 0, 0), ylabel='X')
     subPlot(ax[0], time, get_sub_states(original_system_states, 1),  get_sub_ref_states(ref_states, 0, 1), ylabel='Y')
     subPlot(ax[0], time, get_sub_states(original_system_states, 2),  get_sub_ref_states(ref_states, 0, 2), ylabel='Z')

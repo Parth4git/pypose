@@ -74,7 +74,7 @@ class MultiCopter(NLS):
         M = torch.t(torch.atleast_2d(M))
         pose = torch.atleast_2d(pose)
         pose_SO3 = LieTensor(pose, ltype=pp.SO3_type)
-        Rwb = pose_SO3.matrix()[0].T
+        Rwb = pose_SO3.matrix()[0]
 
         acceleration = (torch.mm(Rwb, -thrust * self.e3)
                         + self.m * self.g * self.e3) / self.m
