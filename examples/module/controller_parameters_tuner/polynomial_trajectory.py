@@ -95,10 +95,9 @@ class PolynomialTrajectoryGenerator:
     accumulated_ts = 0
     curr_traj_index = 1
 
-    while accumulated_ts + dt <= wps[N-1].ts + dt:
+    while accumulated_ts <= wps[N-1].ts:
       if accumulated_ts > wps[curr_traj_index].ts:
         curr_traj_index += 1
-        accumulated_ts = wps[curr_traj_index - 1].ts
       last_wp = wps[curr_traj_index - 1]
       curr_wp = wps[curr_traj_index]
 
@@ -201,8 +200,10 @@ np.set_printoptions(threshold=sys.maxsize)
 np.set_printoptions(suppress=True)
 np.set_printoptions(linewidth=np.inf)
 waypoints = [WayPoint(0, 0, 0, 0),
-            WayPoint(0, 0, -1, 2),
-            WayPoint(0, 0, -2, 4)]
+                WayPoint(2, 0, -1, 2),
+                WayPoint(2, 2, -2, 4),
+                WayPoint(4, 0, -3, 6),
+                WayPoint(6, 2, -4, 8)]
 traj_gen = PolynomialTrajectoryGenerator()
 traj_gen.assign_timestamps_in_waypoints(waypoints)
 desired_states = traj_gen.generate_trajectory(waypoints, 0.1, 7)
