@@ -105,7 +105,7 @@ class ControllerParametersTuner(nn.Module):
         self.penalty_coefficient = penalty_coefficient
 
     def tune(self, dynamic_system, initial_state, ref_states, controller, parameters,
-             parameters_tuning_set, tau, states_to_tune, func_get_state_error):
+             parameters_bound, tau, states_to_tune, func_get_state_error):
         r"""
         Args:
             dynamic_system (pypose.module.dynamics): dynamics system
@@ -115,14 +115,18 @@ class ControllerParametersTuner(nn.Module):
                 should not be equal to the system initial state.
             controller (pypose.module.controller): Linear or nonlinear controller to control the dynamic system
             parameters (Tensor): 1d tensor represent the controller parameters
-            parameters_tuning_set (Tensor): This set gives the minimum and the maximum
+            parameters_bound (Tensor): This set gives the minimum and the maximum
                 value the parameters can reach
             tau: time interval considered in system
             states_to_tune (Tensor): choose which state needs to be considered in the
                 loss function, usually only position is chosen.
             func_get_state_error (function): function has two inputs: system state and
                 ref state. The function needs to be provided by users considering system
-                state and ref state are not always in the same formation.
+                state and ref state are not always in the same formation or dimension.
+
+        Return:
+            list of :obj:`Tensor`: tuned controller parameters, original state loss and
+            new state loss using tuned controller parameters
         """
         states_to_tune = states_to_tune.double()
         states = []
@@ -136,20 +140,22 @@ class ControllerParametersTuner(nn.Module):
         dxdparam_gradients.append(torch.zeros([len(initial_state), len(controller_parameters)]).double())
 
         for index, ref_state in enumerate(ref_states):
-            controller_input = controller.get_control(parameters=controller_parameters, state=system_state, ref_state=ref_state, feed_forward_quantity=None)
+            controller_input = controller.get_control(parameters=controller_parameters, \
+                state=system_state, ref_state=ref_state, feed_forward_quantity=None)
+
             system_new_state = dynamic_system.state_transition(system_state, controller_input, tau)
 
             # calcuate the state derivative wrt. the parameters and the input derivative wrt. the parameters
             dhdx_func = lambda state: controller.get_control(parameters = controller_parameters,
-                                                              state = state, ref_state = ref_state, feed_forward_quantity = None)
+                state = state, ref_state = ref_state, feed_forward_quantity = None)
             dhdxk_tensor = torch.squeeze(jacobian(dhdx_func, system_state))
 
             dhdparam_func = lambda params: controller.get_control(parameters = params,
-                                                                  state = system_state, ref_state = ref_state, feed_forward_quantity = None)
+                state = system_state, ref_state = ref_state, feed_forward_quantity = None)
             dhdparam_tensor = torch.squeeze(jacobian(dhdparam_func, controller_parameters))
 
             dfdxk_func = lambda system_state: dynamic_system.state_transition(state = system_state,
-                                                                              input = controller_input, t = tau)
+                                                            input = controller_input, t = tau)
             dfdxk_tensor = torch.squeeze(jacobian(dfdxk_func, system_state))
 
             dfduk_func = lambda inputs: dynamic_system.state_transition(state = system_state,
@@ -163,7 +169,8 @@ class ControllerParametersTuner(nn.Module):
             last_gradient = dxdparam_gradients[-1]
 
             dxdparam_gradients.append(
-                torch.mm(dfdxk_tensor + torch.mm(dfduk_tensor, dhdxk_tensor), last_gradient) + torch.mm(dfduk_tensor, dhdparam_tensor)
+                torch.mm(dfdxk_tensor + torch.mm(dfduk_tensor, dhdxk_tensor), last_gradient) \
+                + torch.mm(dfduk_tensor, dhdparam_tensor)
             )
 
             dukdparam_gradients.append(
@@ -172,19 +179,53 @@ class ControllerParametersTuner(nn.Module):
 
         # accumulate the gradients
         gradient_sum = torch.zeros([len(parameters), 1], device=self.device).double()
+        # error summation between system state and reference state
+        loss = torch.zeros(1, device=self.device).double()
 
         for ref_state_index in range(0, len(ref_states)):
-            state_error = func_get_state_error(states[ref_state_index + 1], ref_states[ref_state_index])
+            state_error = func_get_state_error(states[ref_state_index + 1], \
+                                               ref_states[ref_state_index])
             state_error = torch.atleast_2d(state_error)
             state_error = torch.mm(state_error, states_to_tune)
-            gradient_sum += torch.t(2 * torch.mm(state_error, dxdparam_gradients[ref_state_index]))
+            gradient_sum += torch.t(2 * torch.mm(state_error, \
+                                                 dxdparam_gradients[ref_state_index]))
             gradient_sum += self.penalty_coefficient \
-                * torch.t(2 * torch.mm(torch.atleast_2d(inputs[ref_state_index]), dukdparam_gradients[ref_state_index]))
+                * torch.t(2 * torch.mm(torch.atleast_2d(inputs[ref_state_index]), \
+                                       dukdparam_gradients[ref_state_index]))
+            loss += torch.norm(state_error)
 
         gradient_sum = torch.squeeze(torch.t(gradient_sum))
+        loss /= len(ref_states)
 
-        min_parameters = parameters_tuning_set[0]
-        max_parameters = parameters_tuning_set[1]
-        controller_parameters = torch.min(max_parameters, torch.max(min_parameters, parameters - self.learning_rate * gradient_sum))
+        min_parameters = parameters_bound[0]
+        max_parameters = parameters_bound[1]
+        controller_parameters = torch.min(max_parameters, \
+            torch.max(min_parameters, parameters - self.learning_rate * gradient_sum))
 
-        return controller_parameters
+        # compute the loss using new controller parameters
+        new_loss = self.loss_computation(dynamic_system, initial_state, ref_states, \
+                    controller, controller_parameters, tau, states_to_tune, func_get_state_error)
+
+        return controller_parameters, loss, new_loss
+
+    def loss_computation(self, dynamic_system, initial_state, ref_states, controller,
+                         parameters, tau, states_to_tune, func_get_state_error):
+        """
+        Compute the loss besed on the given controller parameters and state error defined
+        by the func_get_state_error input parameter.
+        """
+        system_state = torch.clone(initial_state)
+        loss = torch.zeros(1, device=self.device).double()
+        for index, ref_state in enumerate(ref_states):
+            controller_input = controller.get_control(parameters=parameters,
+                state=system_state, ref_state=ref_state, feed_forward_quantity=None)
+            system_new_state = dynamic_system.state_transition(system_state, \
+                                                               controller_input, tau)
+            state_error = func_get_state_error(system_new_state, ref_state)
+            state_error = torch.atleast_2d(state_error)
+            state_error = torch.mm(state_error, states_to_tune)
+            loss += torch.norm(state_error)
+
+            system_state = system_new_state
+        loss /= len(ref_states)
+        return loss

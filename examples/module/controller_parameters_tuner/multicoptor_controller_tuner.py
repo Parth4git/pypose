@@ -20,8 +20,6 @@ def get_ref_states(initial_state, waypoints, dt):
     ref_states = []
     last_ref_pose = pp.LieTensor(pose, ltype=pp.SO3_type).matrix()[0]
     last_ref_angle_dot = torch.zeros(3, device=device).double()
-    last_ref_angle_ddot = torch.zeros(3, device=device).double()
-    last_velocity_tensor = torch.zeros(3, device=device).double()
 
     gravity_acc_tensor = torch.stack([
         torch.tensor(0., device=device),
@@ -58,11 +56,11 @@ def get_ref_states(initial_state, waypoints, dt):
         b1_ref = torch.cross(b2_ref, b3_ref)
         Rwb = (torch.concat([b1_ref, b2_ref, b3_ref], dim=1)).double()
         R_err = torch.mm(torch.t(last_ref_pose), Rwb)
-        q_err = pp.from_matrix(R_err, ltype=pp.SO3_type)
-        axis = torch.squeeze(torch.tensor([q_err[0], q_err[1], q_err[2]])).reshape([3])
-        if torch.norm(axis) != 0:
-            axis = axis / torch.norm(axis)
-        angle = 2 * torch.acos(q_err[3])
+        R_trace = torch.trace(R_err)
+        angle = torch.acos((R_trace - 1) / 2)
+        axis = 1.0 / (2 * torch.sin(angle)) * torch.tensor(
+            [R_err[2][1] - R_err[1][2], R_err[0][2] - R_err[2][0],
+             R_err[1][0] - R_err[0][1]], device=device)
         angle_dot = angle / dt * axis
         angle_ddot = ((angle_dot - last_ref_angle_dot) / dt).double()
 
@@ -74,7 +72,7 @@ def get_ref_states(initial_state, waypoints, dt):
 
     return ref_states
 
-def run(dynamic_system, controller, controller_parameters, initial_state, ref_states, dt):
+def run_dynamic_system(dynamic_system, controller, controller_parameters, initial_state, ref_states, dt):
     system_states = []
     system_state = torch.clone(initial_state)
     system_states.append(system_state)
@@ -85,31 +83,6 @@ def run(dynamic_system, controller, controller_parameters, initial_state, ref_st
         system_state = system_new_state
         system_states.append(system_state)
     return system_states
-
-def compute_loss(dynamic_system, controller, controller_parameters, penalty_coefficient,
-                 initial_state, ref_states, dt):
-    loss = 0
-    system_state = torch.clone(initial_state)
-    for index, ref_state in enumerate(ref_states):
-      ref_position, ref_velocity, ref_acceleration, \
-          ref_pose, ref_angular_vel, ref_angular_acc = ref_state
-      controller_input = \
-          controller.get_control(controller_parameters, system_state, ref_state, None)
-      system_new_state = dynamic_system.state_transition(system_state,
-                                                         controller_input, dt)
-
-      position, pose, vel, angular_vel = system_new_state[0:3], system_new_state[3:7], \
-          system_new_state[7:10], system_new_state[10:13]
-
-      system_state = system_new_state
-
-      loss += torch.norm(
-        ref_position - position
-      )
-
-      loss += penalty_coefficient * torch.norm(controller_input)
-    return loss / len(ref_states)
-
 
 def func_to_get_state_error(state, ref_state):
     ref_position, ref_velocity, ref_acceleration, \
@@ -161,15 +134,17 @@ if __name__ == "__main__":
 
     # program parameters
     time_interval = 0.02
-    learning_rate = 5
+    learning_rate = 2
 
     initial_state = torch.zeros(13, device=args.device).double()
     initial_state[6] = 1
     initial_controller_parameters = torch.ones(4, device=args.device).double()
 
     waypoints = [WayPoint(0, 0, 0, 0),
-                WayPoint(1, 0, -1, 1),
-                WayPoint(1, 1, -2, 2)]
+                WayPoint(2, 0, -1, 2),
+                WayPoint(4, 2, -2, 4),
+                WayPoint(6, 0, -3, 6),
+                WayPoint(8, 2, -4, 8)]
 
     ref_states = get_ref_states(quadrotor_waypoints, time_interval)
 
@@ -197,13 +172,9 @@ if __name__ == "__main__":
     states_to_tune[1, 1] = 1
     states_to_tune[2, 2] = 1
 
-    last_loss_after_tuning = compute_loss(multicopter, controller, controller_parameters,
-                                          penalty_coefficient, initial_state, ref_states, time_interval)
-    print("Original Loss: ", last_loss_after_tuning)
-
     meet_termination_condition = False
     while not meet_termination_condition:
-        controller_parameters = tuner.tune(
+        controller_parameters, loss, loss_using_new_controller_parameter = tuner.tune(
           multicopter,
           initial_state,
           ref_states,
@@ -215,12 +186,11 @@ if __name__ == "__main__":
           states_to_tune,
           func_to_get_state_error
         )
-        print("Controller parameters: ", controller_parameters)
-        loss = compute_loss(multicopter, controller, controller_parameters, penalty_coefficient,
-                                     initial_state, ref_states, time_interval)
-        print("Loss: ", loss)
+        print("New Controller parameters: ", controller_parameters)
+        print("Original Loss: ", loss)
+        print('New Loss: ', loss_using_new_controller_parameter)
 
-        if (last_loss_after_tuning - loss) < 0.0001:
+        if (loss - loss_using_new_controller_parameter) < 0.00001:
             meet_termination_condition = True
             print("Meet tuning termination condition, terminated.")
         else:
@@ -228,9 +198,9 @@ if __name__ == "__main__":
 
     # plot the result
     # get the result with original and tuned controller parameters
-    original_system_states = run(multicopter, controller, torch.clone(initial_controller_parameters),
+    original_system_states = run_dynamic_system(multicopter, controller, torch.clone(initial_controller_parameters),
                                 initial_state, ref_states, time_interval)
-    new_system_states = run(multicopter, controller, controller_parameters, initial_state,
+    new_system_states = run_dynamic_system(multicopter, controller, controller_parameters, initial_state,
                             ref_states, time_interval)
 
     #insert intial reference state
