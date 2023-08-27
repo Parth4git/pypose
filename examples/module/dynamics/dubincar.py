@@ -11,13 +11,13 @@ class DubinCar(NLS):
 
     def rk4(self, state, input, t=None):
         k1 = self.xdot(state, input)
-        k1_state = self.euler_update(state, k1, t / 2)
+        k1_state = self.state_integration(state, k1, t / 2)
 
         k2 = self.xdot(k1_state, input)
-        k2_state = self.euler_update(state, k2, t / 2)
+        k2_state = self.state_integration(state, k2, t / 2)
 
         k3 = self.xdot(k2_state, input)
-        k3_state = self.euler_update(state, k3, t)
+        k3_state = self.state_integration(state, k3, t)
 
         k4 = self.xdot(k3_state, input)
 
@@ -41,7 +41,7 @@ class DubinCar(NLS):
             ]
         )
 
-    def euler_update(self, state, derivative, dt):
+    def state_integration(self, state, derivative, dt):
         pos_x, pos_y, orientation, vel, w = state
         vx, vy, angular_speed, acc, w_dot = derivative
         return torch.stack(

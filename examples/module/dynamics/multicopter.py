@@ -29,13 +29,13 @@ class MultiCopter(NLS):
 
     def rk4(self, state, input, t=None):
         k1 = self.xdot(state, input)
-        k1_state = self.euler_update(state, k1, t / 2)
+        k1_state = self.state_integration(state, k1, t / 2)
 
         k2 = self.xdot(k1_state, input)
-        k2_state = self.euler_update(state, k2, t / 2)
+        k2_state = self.state_integration(state, k2, t / 2)
 
         k3 = self.xdot(k2_state, input)
-        k3_state = self.euler_update(state, k3, t)
+        k3_state = self.state_integration(state, k3, t)
 
         k4 = self.xdot(k3_state, input)
 
@@ -45,7 +45,7 @@ class MultiCopter(NLS):
     def observation(self, state, input, t=None):
         return state
 
-    def euler_update(self, state, derivative, dt):
+    def state_integration(self, state, derivative, dt):
         position, pose, vel, angular_speed = state[0:3], state[3:7], \
             state[7:10], state[10:13]
         vel, angular_derivative, acceleration, w_dot = derivative[0:3], derivative[3:7], \
