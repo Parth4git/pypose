@@ -6,10 +6,15 @@ class PID(nn.Module):
     r"""
     This class is the basic class for all PID controller implementations.
     """
-    def __init__(self):
+    def __init__(self, parameters):
+        device=parameters.device
+        self.integrity_initialized = False
+        self.integity = torch.zeros(1, device=device)
+        self.parameters = parameters
+        self.parameters.requires_grad = True
         pass
 
-    def get_control(self, parameters, state, ref_state, feed_forward_quantity):
+    def forward(self, state, ref_state, feed_forward_quantity=None):
         r"""
         Args:
             parameters: controller parameters, e.g. kp, ki, kd in PID controllers.
@@ -25,4 +30,6 @@ class PID(nn.Module):
         This method is used to reset the internal state.
         For example, integrated error in PID controller
         """
-        pass
+        # if self.integrity_initialized:
+
+        # else:

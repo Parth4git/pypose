@@ -2,14 +2,14 @@ import torch
 from pypose.module.pid import PID
 
 class DubinCarController(PID):
-    def __init__(self):
-        super(DubinCarController, self).__init__()
+    def __init__(self, parameters):
+        super(DubinCarController, self).__init__(parameters)
 
-    def get_control(self, parameters, state, ref_state, feed_forward_quantity):
+    def forward(self, state, ref_state, feed_forward_quantity):
         x_desired, y_desired, v_desired, acc_desired, \
           ori_desired, w_desired, wdot_desired = ref_state
         px, py, orientation, vel, w = state
-        kp, kv, kori, kw = parameters
+        kp, kv, kori, kw = self.parameters
 
         ori_cos = torch.cos(orientation)
         ori_sin = torch.sin(orientation)

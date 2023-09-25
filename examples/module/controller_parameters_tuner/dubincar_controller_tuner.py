@@ -30,12 +30,12 @@ def get_ref_states(time, dt, device):
             orientation, angular_vel, zero_tensor], device=device))
     return car_desired_states
 
-def run_dynamic_system(dynamic_system, controller, controller_parameters, initial_state, ref_states, dt):
+def run_dynamic_system(dynamic_system, controller, initial_state, ref_states, dt):
     system_states = []
     system_state = torch.clone(initial_state)
     system_states.append(system_state)
     for index, ref_state in enumerate(ref_states):
-        controller_input = controller.get_control(controller_parameters, system_state, ref_state, None)
+        controller_input = controller.forward(system_state, ref_state, None)
         system_new_state = dynamic_system.state_transition(system_state, controller_input, dt)
 
         system_state = system_new_state
@@ -82,7 +82,7 @@ if __name__ == "__main__":
     os.makedirs(os.path.join(args.save), exist_ok=True)
 
     # program parameters
-    time_interval = 0.02
+    time_interval = 0.1
     learning_rate = 10
     # states tensor: x position, y position, orientation, velocity, angular_velocity
     initial_state = torch.zeros(5, device=args.device).double()
@@ -99,8 +99,8 @@ if __name__ == "__main__":
                                       penalty_coefficient=penalty_coefficient,
                                       device=args.device)
 
-    controller = DubinCarController()
     controller_parameters = torch.clone(initial_controller_parameters)
+    controller = DubinCarController(controller_parameters)
 
     states_to_tune = torch.zeros([len(initial_state), len(initial_state)]
       , device=args.device)
@@ -115,7 +115,6 @@ if __name__ == "__main__":
           initial_state,
           ref_states,
           controller,
-          controller_parameters,
           (0.001 * torch.ones_like(controller_parameters),
             20 * torch.ones_like(controller_parameters)),
           time_interval,
@@ -125,8 +124,9 @@ if __name__ == "__main__":
         print("New Controller parameters: ", controller_parameters)
         print("Original Loss: ", loss)
         print('New Loss: ', loss_using_new_controller_parameter)
+        controller.parameters = controller_parameters
 
-        if (loss - loss_using_new_controller_parameter) < 0.00001:
+        if (loss - loss_using_new_controller_parameter) < -0.00001:
             meet_termination_condition = True
             print("Meet tuning termination condition, terminated.")
         else:
@@ -134,9 +134,10 @@ if __name__ == "__main__":
 
     # plot the result
     # get the result with original and tuned controller parameters
-    original_system_states = run_dynamic_system(dubincar, controller, torch.clone(initial_controller_parameters),
+    untuned_controller = DubinCarController(initial_controller_parameters)
+    original_system_states = run_dynamic_system(dubincar, untuned_controller,
                                  initial_state, ref_states, time_interval)
-    new_system_states = run_dynamic_system(dubincar, controller, controller_parameters, initial_state,
+    new_system_states = run_dynamic_system(dubincar, controller, initial_state,
                                   ref_states, time_interval)
     ref_states.insert(0, torch.zeros(9, device=args.device))
     time = torch.arange(0, time_interval * len(ref_states), time_interval).numpy()
