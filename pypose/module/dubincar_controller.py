@@ -5,7 +5,17 @@ class DubinCarController(PID):
     def __init__(self, parameters):
         super(DubinCarController, self).__init__(parameters)
 
-    def forward(self, state, ref_state, feed_forward_quantity):
+    def compute_position_error(state, ref_state):
+        x_desired, y_desired, v_desired, acc_desired, \
+          ori_desired, w_desired, wdot_desired = ref_state
+        px, py, orientation, vel, w = state
+        ori_cos = torch.cos(orientation)
+        ori_sin = torch.sin(orientation)
+        return ori_cos * (x_desired - px) + ori_sin * (y_desired - py)
+
+    def
+
+    def forward(self, state, ref_state, dt, feed_forward_quantity):
         x_desired, y_desired, v_desired, acc_desired, \
           ori_desired, w_desired, wdot_desired = ref_state
         px, py, orientation, vel, w = state
@@ -18,7 +28,7 @@ class DubinCarController(PID):
 
         # acceleration output
         acceleration = \
-          kp * (ori_cos * (x_desired - px) + ori_sin * (y_desired - py)) \
+          kp * () \
           + kv * (ori_cos * (v_desired * des_ori_cos - vel * ori_cos)
             + ori_sin * (v_desired * des_ori_sin - vel * ori_sin)) \
           + ori_cos * (acc_desired * des_ori_cos - v_desired * w_desired * des_ori_sin) \
