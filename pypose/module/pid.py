@@ -6,7 +6,7 @@ class PID(nn.Module):
     r"""
     This class is the basic class for all PID controller implementations.
     """
-    def __init__(self, parameters):
+    def __init__(self, parametersz):
         device=parameters.device
         self.integrity_initialized = False
         self.integity = torch.zeros(1, device=device)

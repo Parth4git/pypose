@@ -52,4 +52,4 @@ class DubinCar(NLS):
             vel + acc * dt,
             w + w_dot * dt
           ]
-        )
+        ).squeeze()

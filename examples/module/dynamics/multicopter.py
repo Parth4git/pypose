@@ -19,7 +19,7 @@ class MultiCopter(NLS):
     def __init__(self, mass, g, J, e3):
         super(MultiCopter, self).__init__()
         self.m = mass
-        self.J = J.double()
+        self.J = J
         self.J_inverse = torch.inverse(self.J)
         self.g = g
         self.e3 = e3
@@ -40,7 +40,6 @@ class MultiCopter(NLS):
         k4 = self.xdot(k3_state, input)
 
         return state + (k1 + 2 * k2 + 2 * k3 + k4) / 6 * t
-
 
     def observation(self, state, input, t=None):
         return state

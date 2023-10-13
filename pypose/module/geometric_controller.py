@@ -5,14 +5,14 @@ from pypose.module.pid import PID
 
 
 class GeometricController(PID):
-    def __init__(self, mass, J, e3, g = 9.81):
-        super(GeometricController, self).__init__()
-        self.e3 = e3.double()
+    def __init__(self, parameters, mass, J, e3, g = 9.81):
+        super(GeometricController, self).__init__(parameters)
+        self.e3 = e3
         self.g = g
         self.m = mass
-        self.J = J.double()
+        self.J = J
 
-    def get_control(self, parameters, state, ref_state, feed_forward_quantity):
+    def forward(self, state, ref_state, feed_forward_quantity):
         device = state.device
         desired_position, desired_velocity, desired_acceleration, \
           desired_pose, desired_angular_vel, desired_angular_acc = ref_state
@@ -24,7 +24,7 @@ class GeometricController(PID):
         angular_vel = state[10:13]
 
         # extract parameters
-        kp, kv, kori, kw = parameters
+        kp, kv, kori, kw = self.parameters
 
         pose = torch.atleast_2d(pose)
         angular_vel = torch.t(torch.atleast_2d(angular_vel))
